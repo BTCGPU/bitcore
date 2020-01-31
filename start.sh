@@ -6,11 +6,11 @@ export CHAIN=BTG
 
 case $1 in
 node)
-  exec 1>debug.node 2>&1
+  exec &> >(tee -a debug.node)
   npm run node
 ;;
 insight)
-  exec 1>debug.insight 2>&1
+  exec &> >(tee -a debug.insight)
   npm run insight
 ;;
 *)
