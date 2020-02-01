@@ -117,3 +117,17 @@ a.disabled-link{
   margin: 5px;
   padding: 5px;
 }
+
+.toolbar-md-brand .toolbar-background-md {
+  background: #3936b3 !important;
+}
+head-nav .toolbar-content .search input {
+  background: rgba(255,255,255, .3) !important;
+  color: #fff !important;
+}
+@media screen and (max-width: 39.9375em) {
+  head-nav .toolbar-content ion-title.logo-header .toolbar-title {
+      width: 150px !important;
+      margin-left: 7px !important;;
+  }
+}
