@@ -1,6 +1,7 @@
 'use strict';
 
 var _ = require('lodash');
+var Networks = require('../networks');
 var BN = require('../crypto/bn');
 var BufferUtil = require('../util/buffer');
 var BufferReader = require('../encoding/bufferreader');
@@ -219,20 +220,19 @@ BlockHeader.prototype.toBufferWriter = function toBufferWriter(bw) {
   if (!bw) {
     bw = new BufferWriter();
   }
+  var network = Networks.get(process.env.NETWORK)
   bw.writeInt32LE(this.version);
   bw.write(this.prevHash);
   bw.write(this.merkleRoot);
-  // forkHeight 491407
-  // Hash calculation is different between prefork blocks and postfork blocks
-  if (this.height >= 491407) {
+  if (this.height >= network.forkHeight) {
     bw.writeUInt32LE(this.height);
     bw.write(this.reserved);
   }
   bw.writeUInt32LE(this.time);
   bw.writeUInt32LE(this.bits);
-  if (this.height >= 491407) {
+  if (this.height >= network.forkHeight) {
     bw.write(this.nonce);
-    // bw.writeVarintNum(this.solution.length);
+    bw.writeVarintNum(this.solution.length);
     bw.write(this.solution);
   } else {
     bw.writeUInt32LE(parseInt(BufferUtil.reverse(this.nonce.slice(0, 16)).toString('hex'), 16));

@@ -65,6 +65,7 @@ function get(arg, keys) {
  * @param {Number} data.xpubkey - The extended public key magic
  * @param {Number} data.xprivkey - The extended private key magic
  * @param {Number} data.networkMagic - The network magic number
+ * @param {Number} data.forkHeight - The network fork height
  * @param {Number} data.port - The network port
  * @param {Array}  data.dnsSeeds - An array of dns seeds
  * @return Network
@@ -81,7 +82,8 @@ function addNetwork(data) {
     scripthash: data.scripthash,
     bech32prefix: data.bech32prefix,
     xpubkey: data.xpubkey,
-    xprivkey: data.xprivkey
+    xprivkey: data.xprivkey,
+    forkHeight: data.forkHeight
   });
 
   if (data.networkMagic) {
@@ -146,6 +148,7 @@ addNetwork({
   xpubkey: 0x0488b21e,
   xprivkey: 0x0488ade4,
   networkMagic:0xe1476d44,
+  forkHeight: 491407,
   port: 8338,
   dnsSeeds: [
   ]
@@ -167,6 +170,7 @@ addNetwork({
   xpubkey: 0x043587cf,
   xprivkey: 0x04358394,
   networkMagic: 0xE2486E45,
+  forkHeight: 0,
   port: 18338,
   dnsSeeds: [
   ]
@@ -188,6 +192,7 @@ addNetwork({
   xpubkey: 0x043587cf,
   xprivkey: 0x04358394,
   networkMagic: 0xfabfb5da,
+  forkHeight: 0,
   port: 18444,
   dnsSeeds: []
 });
