@@ -9,7 +9,7 @@ var Hash = require('../crypto/hash');
 var JSUtil = require('../util/js');
 var $ = require('../util/preconditions');
 
-var GENESIS_BITS = 0x1f07ffff;
+var GENESIS_BITS = 0x1d00ffff;
 
 /**
  * Instantiate a BlockHeader from a Buffer, JSON object, or Object with
@@ -188,7 +188,7 @@ BlockHeader.prototype.toObject = BlockHeader.prototype.toJSON = function toObjec
     version: this.version,
     prevHash: BufferUtil.reverse(this.prevHash).toString('hex'),
     merkleRoot: BufferUtil.reverse(this.merkleRoot).toString('hex'),
-    height: this.heigh,
+    height: this.height,
     reserved: BufferUtil.reverse(this.reserved).toString('hex'),
     time: this.time,
     bits: this.bits,
@@ -219,16 +219,24 @@ BlockHeader.prototype.toBufferWriter = function toBufferWriter(bw) {
   if (!bw) {
     bw = new BufferWriter();
   }
-  bw.writeUInt32LE(this.version);
+  bw.writeInt32LE(this.version);
   bw.write(this.prevHash);
   bw.write(this.merkleRoot);
-  bw.writeUInt32LE(this.height);
-  bw.write(this.reserved);
+  // forkHeight 491407
+  // Hash calculation is different between prefork blocks and postfork blocks
+  if (this.height >= 491407) {
+    bw.writeUInt32LE(this.height);
+    bw.write(this.reserved);
+  }
   bw.writeUInt32LE(this.time);
   bw.writeUInt32LE(this.bits);
-  bw.write(this.nonce);
-  bw.writeVarintNum(this.solution.length);
-  bw.write(this.solution);
+  if (this.height >= 491407) {
+    bw.write(this.nonce);
+    // bw.writeVarintNum(this.solution.length);
+    bw.write(this.solution);
+  } else {
+    bw.writeUInt32LE(parseInt(BufferUtil.reverse(this.nonce.slice(0, 16)).toString('hex'), 16));
+  }
   return bw;
 };
 
