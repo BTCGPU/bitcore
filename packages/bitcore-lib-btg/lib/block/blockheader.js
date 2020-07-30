@@ -235,7 +235,7 @@ BlockHeader.prototype.toBufferWriter = function toBufferWriter(bw) {
     bw.writeVarintNum(this.solution.length);
     bw.write(this.solution);
   } else {
-    bw.writeUInt32LE(parseInt(BufferUtil.reverse(this.nonce.slice(0, 16)).toString('hex'), 16));
+    bw.write(this.nonce.slice(0, 8));
   }
   return bw;
 };
