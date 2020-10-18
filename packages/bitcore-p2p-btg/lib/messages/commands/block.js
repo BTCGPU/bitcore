@@ -31,6 +31,7 @@ BlockMessage.prototype.setPayload = function(payload) {
   } else {
     this.block = this.Block.fromBuffer(payload);
   }
+  this.block.header.setNetwork(this.network);
 };
 
 BlockMessage.prototype.getPayload = function() {

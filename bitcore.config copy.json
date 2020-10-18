@@ -1,0 +1,42 @@
+{
+  "bitcoreNode": {
+    "services": {
+      "api": {
+      }
+    },
+    "chains": {
+      "BTG": {
+        "mainnet": {
+          "chainSource": "p2p",
+          "trustedPeers": [
+            {
+              "host": "127.0.0.1",
+              "port": 8338
+            }
+          ],
+          "rpc": {
+            "host": "127.0.0.1",
+            "port": 8339,
+            "username": "local",
+            "password": "mahou"
+          }
+        },
+        "testnet": {
+          "chainSource": "p2p",
+          "trustedPeers": [
+            {
+              "host": "127.0.0.1",
+              "port": 18338
+            }
+          ],
+          "rpc": {
+            "host": "127.0.0.1",
+            "port": 18339,
+            "username": "local",
+            "password": "mahou"
+          }
+        }
+      }
+    }
+  }
+}

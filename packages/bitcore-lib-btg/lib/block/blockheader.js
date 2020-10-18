@@ -35,6 +35,7 @@ var BlockHeader = function BlockHeader(arg) {
   this.bits = info.bits;
   this.nonce = info.nonce;
   this.solution = info.solution;
+  this.network = null;
 
   if (info.hash) {
     $.checkState(
@@ -115,6 +116,9 @@ BlockHeader._fromObject = function _fromObject(data) {
  * @returns {BlockHeader} - An instance of block header
  */
 BlockHeader.fromObject = function fromObject(obj) {
+  if (obj instanceof BlockHeader) {
+    return obj;
+  }
   var info = BlockHeader._fromObject(obj);
   return new BlockHeader(info);
 };
@@ -180,6 +184,10 @@ BlockHeader.fromBufferReader = function fromBufferReader(br) {
   return new BlockHeader(info);
 };
 
+BlockHeader.prototype.setNetwork = function setNetwork(networkName) {
+  this.network = Networks.get(networkName);
+}
+
 /**
  * @returns {Object} - A plain object of the BlockHeader
  */
@@ -201,36 +209,35 @@ BlockHeader.prototype.toObject = BlockHeader.prototype.toJSON = function toObjec
 /**
  * @returns {Buffer} - A Buffer of the BlockHeader
  */
-BlockHeader.prototype.toBuffer = function toBuffer() {
-  return this.toBufferWriter().concat();
+BlockHeader.prototype.toBuffer = function toBuffer(legacy=false) {
+  return this.toBufferWriter(null, legacy).concat();
 };
 
 /**
  * @returns {string} - A hex encoded string of the BlockHeader
  */
-BlockHeader.prototype.toString = function toString() {
-  return this.toBuffer().toString('hex');
+BlockHeader.prototype.toString = function toString(legacy=false) {
+  return this.toBuffer(legacy).toString('hex');
 };
 
 /**
  * @param {BufferWriter} - An existing instance BufferWriter
  * @returns {BufferWriter} - An instance of BufferWriter representation of the BlockHeader
  */
-BlockHeader.prototype.toBufferWriter = function toBufferWriter(bw) {
+BlockHeader.prototype.toBufferWriter = function toBufferWriter(bw, legacy=false) {
   if (!bw) {
     bw = new BufferWriter();
   }
-  var network = Networks.get(process.env.NETWORK)
   bw.writeInt32LE(this.version);
   bw.write(this.prevHash);
   bw.write(this.merkleRoot);
-  if (this.height >= network.forkHeight) {
+  if (!legacy) {
     bw.writeUInt32LE(this.height);
     bw.write(this.reserved);
   }
   bw.writeUInt32LE(this.time);
   bw.writeUInt32LE(this.bits);
-  if (this.height >= network.forkHeight) {
+  if (!legacy) {
     bw.write(this.nonce);
     bw.writeVarintNum(this.solution.length);
     bw.write(this.solution);
@@ -274,8 +281,8 @@ BlockHeader.prototype.getDifficulty = function getDifficulty() {
 /**
  * @returns {Buffer} - The little endian hash buffer of the header
  */
-BlockHeader.prototype._getHash = function hash() {
-  var buf = this.toBuffer();
+BlockHeader.prototype._getHash = function hash(legacy=false) {
+  var buf = this.toBuffer(legacy);
   return Hash.sha256sha256(buf);
 };
 
@@ -287,7 +294,9 @@ var idProperty = {
    */
   get: function() {
     if (!this._id) {
-      this._id = BufferReader(this._getHash()).readReverse().toString('hex');
+      let legacy = this.height < this.network.forkHeight;
+      this._id = BufferReader(this._getHash(legacy)).readReverse().toString('hex');
+      console.log(`getHash - h:${this._id} ${this.height} ~ ${this.network.forkHeight}`);
     }
     return this._id;
   },

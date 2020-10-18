@@ -189,11 +189,11 @@ export class BitcoinP2PWorker extends BaseP2PWorker<IBtcBlock> {
   }
 
   public async getBlock(hash: string) {
-    logger.debug('Getting block, hash:', hash);
+    logger.debug('Getting block', {hash});
     let received = false;
     return new Promise<Bitcoin.Block>(async resolve => {
       this.events.once(hash, (block: Bitcoin.Block) => {
-        logger.debug('Received block, hash:', hash);
+        logger.debug('Received block', {hash});
         received = true;
         resolve(block);
       });

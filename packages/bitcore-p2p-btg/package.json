@@ -24,7 +24,8 @@
     "bitcore-lib-btg": "^8.9.0",
     "bloom-filter": "^0.2.0",
     "buffers": "bitpay/node-buffers#v0.1.2-bitpay",
-    "socks5-client": "^0.3.6"
+    "socks5-client": "^0.3.6",
+    "zeromq": "^6.0.0-beta.6"
   },
   "devDependencies": {
     "bitcore-build": "^8.9.0",
