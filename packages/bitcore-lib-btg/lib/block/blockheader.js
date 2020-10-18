@@ -235,7 +235,7 @@ BlockHeader.prototype.toBufferWriter = function toBufferWriter(bw) {
     bw.writeVarintNum(this.solution.length);
     bw.write(this.solution);
   } else {
-    bw.write(this.nonce.slice(0, 8));
+    bw.write(this.nonce.slice(0, 4));
   }
   return bw;
 };
