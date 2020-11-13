@@ -172,7 +172,7 @@ export class MongoWriteStream extends Transform {
 
   async _transform(data: Array<any>, _, done) {
     await Promise.all(
-      partition(data, data.length / Config.get().maxPoolSize).map(batch => this.collection.bulkWrite(batch))
+      partition(data, data.length / Config.get().maxPoolSize).map(batch => this.collection.bulkWrite(batch, {ordered: false}))
     );
     done(null, data);
   }
@@ -230,6 +230,8 @@ export class TransactionModel extends BaseTransaction<IBtcTransaction> {
     });
 
     this.streamMintOps({ ...params, mintStream });
+    this.streamSpendOps({ ...params, spentStream });
+
     await new Promise(r =>
       mintStream
         .pipe(new MempoolSafeTransform(height))
@@ -238,7 +240,6 @@ export class TransactionModel extends BaseTransaction<IBtcTransaction> {
         .on('finish', r)
     );
 
-    this.streamSpendOps({ ...params, spentStream });
     await new Promise(r =>
       spentStream
         .pipe(new MongoWriteStream(CoinStorage.collection))
