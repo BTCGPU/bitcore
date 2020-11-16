@@ -39,6 +39,7 @@ HeadersMessage.prototype.setPayload = function(payload) {
   this.headers = [];
   for (var i = 0; i < count; i++) {
     var header = this.BlockHeader.fromBufferReader(parser);
+    header.setNetwork(this.network);
     this.headers.push(header);
     var txn_count = parser.readUInt8();
     $.checkState(txn_count === 0, 'txn_count should always be 0');

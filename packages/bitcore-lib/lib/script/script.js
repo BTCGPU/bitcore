@@ -29,6 +29,8 @@ var Script = function Script(from) {
     return new Script(from);
   }
   this.chunks = [];
+  this.dirty = true;
+  this.cachedBuffer = undefined;
 
   if (BufferUtil.isBuffer(from)) {
     return Script.fromBuffer(from);
@@ -47,12 +49,14 @@ Script.prototype.set = function(obj) {
   $.checkArgument(_.isObject(obj));
   $.checkArgument(_.isArray(obj.chunks));
   this.chunks = obj.chunks;
+  this.dirty = true;
   return this;
 };
 
 Script.fromBuffer = function(buffer) {
   var script = new Script();
   script.chunks = [];
+  script.dirty = true;
 
   var br = new BufferReader(buffer);
   while (!br.finished()) {
@@ -108,6 +112,12 @@ Script.fromBuffer = function(buffer) {
 };
 
 Script.prototype.toBuffer = function() {
+  if (!this.dirty) {
+    if (!this.cachedBuffer) {
+      throw new Error('Script cache corrupted');
+    }
+    return this.cachedBuffer;
+  }
   var bw = new BufferWriter();
 
   for (var i = 0; i < this.chunks.length; i++) {
@@ -130,12 +140,16 @@ Script.prototype.toBuffer = function() {
     }
   }
 
-  return bw.concat();
+  const buffer = bw.concat();
+  this.cachedBuffer = buffer;
+  this.dirty = false;
+  return buffer;
 };
 
 Script.fromASM = function(str) {
   var script = new Script();
   script.chunks = [];
+  script.dirty = true;
 
   var tokens = str.split(' ');
   var i = 0;
@@ -181,6 +195,7 @@ Script.fromString = function(str) {
   }
   var script = new Script();
   script.chunks = [];
+  script.dirty = true;
 
   var tokens = str.split(' ');
   var i = 0;
@@ -670,6 +685,7 @@ Script.prototype.add = function(obj) {
 };
 
 Script.prototype._addByType = function(obj, prepend) {
+  this.dirty = true;
   if (typeof obj === 'string') {
     this._addOpcode(obj, prepend);
   } else if (typeof obj === 'number') {
@@ -688,6 +704,7 @@ Script.prototype._addByType = function(obj, prepend) {
 };
 
 Script.prototype._insertAtPosition = function(op, prepend) {
+  this.dirty = true;
   if (prepend) {
     this.chunks.unshift(op);
   } else {
@@ -742,6 +759,7 @@ Script.prototype.hasCodeseparators = function() {
 };
 
 Script.prototype.removeCodeseparators = function() {
+  this.dirty = true;
   var chunks = [];
   for (var i = 0; i < this.chunks.length; i++) {
     if (this.chunks[i].opcodenum !== Opcode.OP_CODESEPARATOR) {
@@ -1099,6 +1117,7 @@ Script.prototype.toAddress = function(network) {
  * be removed, because they do not use the same pushdata op.
  */
 Script.prototype.findAndDelete = function(script) {
+  this.dirty = true;
   var buf = script.toBuffer();
   var hex = buf.toString('hex');
   for (var i = 0; i < this.chunks.length; i++) {
