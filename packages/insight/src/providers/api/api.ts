@@ -24,7 +24,7 @@ const EnvApiHosts: { [env: string]: string[] } = {
 };
 
 const CurrentApiHosts = EnvApiHosts[CurrentEnv];
-const RateApiBase = 'http://localhost'
+const RateApiBase = 'https://rate.bitcoingold.dev'
 
 @Injectable()
 export class ApiProvider {
