@@ -8,6 +8,8 @@ import {
   TxsProvider
 } from '../../providers/transactions/transactions';
 
+import bitcoreLib from 'bitcore-lib';
+
 /**
  * Generated class for the TransactionDetailsComponent component.
  *
@@ -57,9 +59,18 @@ export class TransactionDetailsComponent implements OnInit {
       });
   }
 
-  public getAddress(v: ApiCoin): string {
+  public getIsAddress(v: ApiCoin): boolean {
+    return v.address === 'true';
+  }
+
+  public getAddress(v: ApiCoin, showUnparsed: boolean): string {
     if (v.address === 'false') {
-      return 'Unparsed address';
+      if (showUnparsed) {
+        return 'Unparsed address';
+      } else {
+        const script = bitcoreLib.Script.fromString(v.script);
+        return script.toASM();
+      }
     }
 
     return v.address;
