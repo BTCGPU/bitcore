@@ -1,6 +1,6 @@
-import { EventEmitter } from "events";
+import { EventEmitter } from 'events';
+import { Collection, Db, MongoClient, ObjectID } from 'mongodb';
 import { Storage } from '../services/storage';
-import { ObjectID, Collection, MongoClient, Db } from 'mongodb';
 
 export type MongoBound<T> = T & Partial<{ _id: ObjectID }>;
 export abstract class BaseModel<T> {
@@ -24,7 +24,9 @@ export abstract class BaseModel<T> {
       if (this.storageService.db != undefined) {
         this.connected = true;
         this.db = this.storageService.db;
-        await this.onConnect();
+        const connected = this.onConnect();
+        this.storageService.modelsConnected.push(connected);
+        await connected;
         this.events.emit('CONNECTED');
       }
     };

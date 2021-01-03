@@ -20,8 +20,8 @@ export class Request {
   constructor(url?, opts?) {
     this.baseUrl = url;
 
-    // request can be overload only for testing
     this.r = opts.r || request;
+    this.supportStaffWalletId = opts.supportStaffWalletId;
 
     this.session = null;
     this.credentials = null;
@@ -154,10 +154,10 @@ export class Request {
       } else {
         ret = new Error(
           body.code +
-          ': ' +
-          (_.isObject(body.message)
-            ? JSON.stringify(body.message)
-            : body.message)
+            ': ' +
+            (_.isObject(body.message)
+              ? JSON.stringify(body.message)
+              : body.message)
         );
       }
     } else {
@@ -174,10 +174,12 @@ export class Request {
   //  @param {Object} args
   //  @param {Callback} cb
   post(url, args, cb) {
+    args = args || {};
     return this.doRequest('post', url, args, false, cb);
   }
 
   put(url, args, cb) {
+    args = args || {};
     return this.doRequest('put', url, args, false, cb);
   }
 
@@ -189,6 +191,7 @@ export class Request {
   get(url, cb) {
     url += url.indexOf('?') > 0 ? '&' : '?';
     url += 'r=' + _.random(10000, 99999);
+
     return this.doRequest('get', url, {}, false, cb);
   }
 

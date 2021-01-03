@@ -1,17 +1,18 @@
+import { ObjectId } from 'bson';
 import { EventEmitter } from 'events';
 import { Request, Response } from 'express';
-import { TransformableModel } from '../types/TransformableModel';
-import logger from '../logger';
-import { LoggifyClass } from '../decorators/Loggify';
 import { ObjectID } from 'mongodb';
-import { MongoClient, Db, Cursor } from 'mongodb';
-import '../models';
-import { StreamingFindOptions } from '../types/Query';
-import { ConfigType } from '../types/Config';
-import { Config, ConfigService } from './config';
+import { Cursor, Db, MongoClient } from 'mongodb';
 import { Readable } from 'stream';
+import { LoggifyClass } from '../decorators/Loggify';
+import logger from '../logger';
+import '../models';
 import { MongoBound } from '../models/base';
-import { ObjectId } from 'bson';
+import { ConfigType } from '../types/Config';
+import { StreamingFindOptions } from '../types/Query';
+import { TransformableModel } from '../types/TransformableModel';
+import { wait } from '../utils/wait';
+import { Config, ConfigService } from './config';
 
 export { StreamingFindOptions };
 
@@ -22,6 +23,7 @@ export class StorageService {
   connected: boolean = false;
   connection = new EventEmitter();
   configService: ConfigService;
+  modelsConnected = new Array<Promise<any>>();
 
   constructor({ configService = Config } = {}) {
     this.configService = configService;
@@ -33,16 +35,15 @@ export class StorageService {
       let options = Object.assign({}, this.configService.get(), args);
       let { dbUrl, dbName, dbHost, dbPort, dbUser, dbPass } = options;
       let auth = dbUser !== '' && dbPass !== '' ? `${dbUser}:${dbPass}@` : '';
-      const connectUrl = dbUrl ? dbUrl :`mongodb://${auth}${dbHost}:${dbPort}/${dbName}?socketTimeoutMS=3600000&noDelay=true`;
+      const connectUrl = dbUrl
+        ? dbUrl
+        : `mongodb://${auth}${dbHost}:${dbPort}/${dbName}?socketTimeoutMS=3600000&noDelay=true`;
       let attemptConnect = async () => {
-        return MongoClient.connect(
-          connectUrl,
-          {
-            keepAlive: true,
-            poolSize: options.maxPoolSize,
-            useNewUrlParser: true
-          }
-        );
+        return MongoClient.connect(connectUrl, {
+          keepAlive: true,
+          poolSize: options.maxPoolSize,
+          useNewUrlParser: true
+        });
       };
       let attempted = 0;
       let attemptConnectId = setInterval(async () => {
@@ -65,7 +66,16 @@ export class StorageService {
     });
   }
 
-  async stop() {}
+  async stop() {
+    if (this.client) {
+      logger.info('Stopping Storage Service');
+      await wait(5000);
+      this.connected = false;
+      await Promise.all(this.modelsConnected);
+      await this.client.close();
+      this.connection.emit('DISCONNECTED');
+    }
+  }
 
   validPagingProperty<T>(model: TransformableModel<T>, property: keyof MongoBound<T>) {
     const defaultCase = property === '_id';

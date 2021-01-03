@@ -17,7 +17,7 @@ var traverseNode = function (parent, errorDefinition) {
     } else {
       throw new Error('Invalid error definition for ' + errorDefinition.name);
     }
-    this.stack = this.message + '\n' + (new Error()).stack;
+    this.stack = this.message + '\n' + new Error().stack;
   };
   NodeError.prototype = Object.create(parent.prototype);
   NodeError.prototype.name = parent.prototype.name + errorDefinition.name;
@@ -44,7 +44,7 @@ var traverseRoot = function (parent, errorsDefinition) {
 var bwc: any = {};
 bwc.Error = function () {
   this.message = 'Internal error';
-  this.stack = this.message + '\n' + (new Error()).stack;
+  this.stack = this.message + '\n' + new Error().stack;
 };
 bwc.Error.prototype = Object.create(Error.prototype);
 bwc.Error.prototype.name = 'bwc.Error';

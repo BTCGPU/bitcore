@@ -24,7 +24,7 @@ export class TransactionPage {
   public confirmations: number;
   public errorMessage: string;
   public chainNetwork: ChainNetwork;
-
+  public prevPage: string;
   private txId: string;
 
   constructor(

@@ -11,7 +11,6 @@ var sha256sha256 = require('./crypto/hash').sha256sha256;
 var JSUtil = require('./util/js');
 var $ = require('./util/preconditions');
 
-
 function Message(message) {
   if (!(this instanceof Message)) {
     return new Message(message);
@@ -100,6 +99,39 @@ Message.prototype.verify = function verify(bitcoinAddress, signatureString) {
   }
 
   return this._verify(publicKey, signature);
+};
+
+/**
+ * Will return a public key string if the provided signature and the message digest is correct
+ * If it isn't the specific reason is accessible via the "error" member.
+ *
+ * @param {Address|String} bitcoinAddress - A bitcoin address
+ * @param {String} signatureString - A base64 encoded compact signature
+ * @returns {String}
+ */
+Message.prototype.recoverPublicKey = function recoverPublicKey(bitcoinAddress, signatureString) {
+  $.checkArgument(bitcoinAddress);
+  $.checkArgument(signatureString && _.isString(signatureString));
+
+  if (_.isString(bitcoinAddress)) {
+    bitcoinAddress = Address.fromString(bitcoinAddress);
+  }
+  var signature = Signature.fromCompact(Buffer.from(signatureString, 'base64'));
+
+  // recover the public key
+  var ecdsa = new ECDSA();
+  ecdsa.hashbuf = this.magicHash();
+  ecdsa.sig = signature;
+  var publicKey = ecdsa.toPublicKey();
+
+  var signatureAddress = Address.fromPublicKey(publicKey, bitcoinAddress.network);
+
+  // check that the recovered address and specified address match
+  if (bitcoinAddress.toString() !== signatureAddress.toString()) {
+    this.error = 'The signature did not match the message digest';
+  }
+
+  return publicKey.toString();
 };
 
 /**

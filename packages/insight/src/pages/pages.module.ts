@@ -22,9 +22,6 @@ import { HomePageModule } from './home/home.module';
     LatestBlocksComponentModule,
     ErrorComponentModule
   ],
-  exports: [
-    // CustomComponent,
-  ],
   entryComponents: [],
   providers: []
 })

@@ -2,8 +2,10 @@ import * as async from 'async';
 import _ from 'lodash';
 import { Db } from 'mongodb';
 import * as mongodb from 'mongodb';
+import logger from './logger';
 import {
   Address,
+  Advertisement,
   Email,
   Notification,
   Preferences,
@@ -17,15 +19,13 @@ import {
 
 const BCHAddressTranslator = require('./bchaddresstranslator'); // only for migration
 const $ = require('preconditions').singleton();
-let log = require('npmlog');
-log.debug = log.verbose;
-log.disableColor();
 
 const collections = {
   // Duplciated in helpers.. TODO
   WALLETS: 'wallets',
   TXS: 'txs',
   ADDRESSES: 'addresses',
+  ADVERTISEMENTS: 'advertisements',
   NOTIFICATIONS: 'notifications',
   COPAYERS_LOOKUP: 'copayers_lookup',
   PREFERENCES: 'preferences',
@@ -39,10 +39,20 @@ const collections = {
   LOCKS: 'locks'
 };
 
+const Common = require('./common');
+const Constants = Common.Constants;
+const Defaults = Common.Defaults;
+
+const ObjectID = mongodb.ObjectID;
+
+var objectIdDate = function(date) {
+  return Math.floor(date / 1000).toString(16) + '0000000000000000';
+};
 export class Storage {
   static BCHEIGHT_KEY = 'bcheight';
   static collections = collections;
   db: Db;
+  client: any;
 
   constructor(opts: { db?: Db } = {}) {
     opts = opts || {};
@@ -50,7 +60,12 @@ export class Storage {
   }
 
   static createIndexes(db) {
-    log.info('Creating DB indexes');
+    logger.info('Creating DB indexes');
+    if (!db.collection) {
+      console.log('[storage.ts.55] no db.collection'); // TODO
+      logger.error('DB not ready');
+      return;
+    }
     db.collection(collections.WALLETS).createIndex({
       id: 1
     });
@@ -80,6 +95,13 @@ export class Storage {
       walletId: 1,
       id: 1
     });
+    db.collection(collections.ADVERTISEMENTS).createIndex(
+      {
+        advertisementId: 1,
+        title: 1
+      },
+      { unique: true }
+    );
     db.collection(collections.ADDRESSES).createIndex({
       walletId: 1,
       createdOn: 1
@@ -150,31 +172,40 @@ export class Storage {
         config.uri = config.uri + '?';
       }
       config.uri = config.uri + 'readPreference=secondaryPreferred';
-      log.info('Read operations set to secondaryPreferred');
+      logger.info('Read operations set to secondaryPreferred');
     }
 
-    mongodb.MongoClient.connect(
-      config.uri,
-      (err, db) => {
-        if (err) {
-          log.error('Unable to connect to the mongoDB. Check the credentials.');
-          return cb(err);
-        }
-        this.db = db;
+    if (!config.dbname) {
+      logger.error('No dbname at config.');
+      return cb(new Error('No dbname at config.'));
+    }
 
-        log.info('Connection established to mongoDB:' + config.uri);
-        Storage.createIndexes(db);
-        return cb();
+    mongodb.MongoClient.connect(config.uri, { useUnifiedTopology: true }, (err, client) => {
+      if (err) {
+        logger.error('Unable to connect to the mongoDB. Check the credentials.');
+        return cb(err);
       }
-    );
+      this.db = client.db(config.dbname);
+      this.client = client;
+
+      logger.info(`Connection established to db: ${config.uri}`);
+
+      Storage.createIndexes(this.db);
+      return cb();
+    });
   }
 
   disconnect(cb) {
-    this.db.close(true, err => {
-      if (err) return cb(err);
-      this.db = null;
+    if (this.client) {
+      this.client.close(err => {
+        if (err) return cb(err);
+        this.db = null;
+        this.client = null;
+        return cb();
+      });
+    } else {
       return cb();
-    });
+    }
   }
 
   fetchWallet(id, cb: (err?: any, wallet?: Wallet) => void) {
@@ -193,7 +224,7 @@ export class Storage {
   }
 
   storeWallet(wallet, cb) {
-    this.db.collection(collections.WALLETS).update(
+    this.db.collection(collections.WALLETS).replaceOne(
       {
         id: wallet.id
       },
@@ -209,7 +240,10 @@ export class Storage {
   storeWalletAndUpdateCopayersLookup(wallet, cb) {
     const copayerLookups = _.map(wallet.copayers, copayer => {
       try {
-        $.checkState(copayer.requestPubKeys);
+        $.checkState(
+          copayer.requestPubKeys,
+          'Failed state: copayer.requestPubkeys undefined at <storeWalletAndUpdateCopayersLookup()>'
+        );
       } catch (e) {
         return cb(e);
       }
@@ -221,7 +255,7 @@ export class Storage {
       };
     });
 
-    this.db.collection(collections.COPAYERS_LOOKUP).remove(
+    this.db.collection(collections.COPAYERS_LOOKUP).deleteMany(
       {
         walletId: wallet.id
       },
@@ -230,7 +264,7 @@ export class Storage {
       },
       err => {
         if (err) return cb(err);
-        this.db.collection(collections.COPAYERS_LOOKUP).insert(
+        this.db.collection(collections.COPAYERS_LOOKUP).insertMany(
           copayerLookups,
           {
             w: 1
@@ -312,11 +346,7 @@ export class Storage {
         if (err) return cb(err);
         if (!result) return cb();
 
-        return this._completeTxData(
-          result.walletId,
-          TxProposal.fromObj(result),
-          cb
-        );
+        return this._completeTxData(result.walletId, TxProposal.fromObj(result), cb);
       }
     );
   }
@@ -344,6 +374,52 @@ export class Storage {
         });
         return cb(null, txs);
       });
+  }
+
+  fetchEthPendingTxs(multisigTxpsInfo) {
+    return new Promise((resolve, reject) => {
+      this.db
+        .collection(collections.TXS)
+        .find({
+          txid: { $in: multisigTxpsInfo.map(txpInfo => txpInfo.transactionHash) }
+        })
+        .sort({
+          createdOn: -1
+        })
+        .toArray(async (err, result) => {
+          if (err) return reject(err);
+          if (!result) return reject();
+          const multisigTxpsInfoByTransactionHash: any = _.groupBy(multisigTxpsInfo, 'transactionHash');
+          const actionsById = {};
+          const txs = _.compact(
+            _.map(result, tx => {
+              if (!tx.multisigContractAddress) {
+                return undefined;
+              }
+              tx.status = 'pending';
+              tx.multisigTxId = multisigTxpsInfoByTransactionHash[tx.txid][0].transactionId;
+              tx.actions.forEach(action => {
+                if (_.some(multisigTxpsInfoByTransactionHash[tx.txid], { event: 'ExecutionFailure' })) {
+                  action.type = 'failed';
+                }
+              });
+              if (tx.amount === 0) {
+                actionsById[tx.multisigTxId] = [...tx.actions, ...(actionsById[tx.multisigTxId] || [])];
+                return undefined;
+              }
+              return TxProposal.fromObj(tx);
+            })
+          );
+
+          txs.forEach((tx: TxProposal) => {
+            if (actionsById[tx.multisigTxId]) {
+              tx.actions = [...tx.actions, ...(actionsById[tx.multisigTxId] || [])];
+            }
+          });
+
+          return resolve(txs);
+        });
+    });
   }
 
   fetchPendingTxs(walletId, cb) {
@@ -488,7 +564,13 @@ export class Storage {
 
   // TODO: remove walletId from signature
   storeNotification(walletId, notification, cb) {
-    this.db.collection(collections.NOTIFICATIONS).insert(
+    // This should only happens in certain tests.
+    if (!this.db) {
+      logger.warn('Trying to store a notification with close DB', notification);
+      return;
+    }
+
+    this.db.collection(collections.NOTIFICATIONS).insertOne(
       notification,
       {
         w: 1
@@ -499,7 +581,7 @@ export class Storage {
 
   // TODO: remove walletId from signature
   storeTx(walletId, txp, cb) {
-    this.db.collection(collections.TXS).update(
+    this.db.collection(collections.TXS).replaceOne(
       {
         id: txp.id,
         walletId
@@ -514,7 +596,7 @@ export class Storage {
   }
 
   removeTx(walletId, txProposalId, cb) {
-    this.db.collection(collections.TXS).remove(
+    this.db.collection(collections.TXS).deleteOne(
       {
         id: txProposalId,
         walletId
@@ -530,7 +612,7 @@ export class Storage {
     async.parallel(
       [
         next => {
-          this.db.collection(collections.WALLETS).remove(
+          this.db.collection(collections.WALLETS).deleteOne(
             {
               id: walletId
             },
@@ -538,14 +620,11 @@ export class Storage {
           );
         },
         next => {
-          const otherCollections: string[] = _.without(
-            _.values(collections),
-            collections.WALLETS
-          );
+          const otherCollections: string[] = _.without(_.values(collections), collections.WALLETS);
           async.each(
             otherCollections,
             (col, next) => {
-              this.db.collection(col).remove(
+              this.db.collection(col).deleteMany(
                 {
                   walletId
                 },
@@ -600,9 +679,7 @@ export class Storage {
         return cb(e);
       }
 
-      this.db
-        .collection(collections.ADDRESSES)
-        .update({ _id: doc._id }, { $set: { address: x } }, { multi: true });
+      this.db.collection(collections.ADDRESSES).updateMany({ _id: doc._id }, { $set: { address: x } });
       cursor.resume();
     });
   }
@@ -641,7 +718,7 @@ export class Storage {
   }
 
   storeAddress(address, cb) {
-    this.db.collection(collections.ADDRESSES).update(
+    this.db.collection(collections.ADDRESSES).replaceOne(
       {
         walletId: address.walletId,
         address: address.address
@@ -670,7 +747,7 @@ export class Storage {
   }
 
   deregisterWallet(walletId, cb) {
-    this.db.collection(collections.WALLETS).update(
+    this.db.collection(collections.WALLETS).updateOne(
       {
         id: walletId
       },
@@ -680,15 +757,14 @@ export class Storage {
         upsert: false
       },
       () => {
-        this.db.collection(collections.ADDRESSES).update(
+        this.db.collection(collections.ADDRESSES).updateMany(
           {
             walletId
           },
           { $set: { beRegistered: null } },
           {
             w: 1,
-            upsert: false,
-            multi: true
+            upsert: false
           },
           () => {
             this.clearWalletCache(walletId, cb);
@@ -703,7 +779,7 @@ export class Storage {
     if (_.isEmpty(addresses)) return cb();
     let duplicate;
 
-    this.db.collection(collections.ADDRESSES).insert(
+    this.db.collection(collections.ADDRESSES).insertMany(
       clonedAddresses,
       {
         w: 1
@@ -716,10 +792,7 @@ export class Storage {
           } else {
             // just return it
             duplicate = true;
-            log.warn(
-              'Found duplicate address: ' +
-                _.join(_.map(clonedAddresses, 'address'), ',')
-            );
+            logger.warn('Found duplicate address: ' + _.join(_.map(clonedAddresses, 'address'), ','));
           }
         }
         this.storeWallet(wallet, err => {
@@ -814,7 +887,7 @@ export class Storage {
   }
 
   storePreferences(preferences, cb) {
-    this.db.collection(collections.PREFERENCES).update(
+    this.db.collection(collections.PREFERENCES).replaceOne(
       {
         walletId: preferences.walletId,
         copayerId: preferences.copayerId
@@ -829,7 +902,7 @@ export class Storage {
   }
 
   storeEmail(email, cb) {
-    this.db.collection(collections.EMAIL_QUEUE).update(
+    this.db.collection(collections.EMAIL_QUEUE).replaceOne(
       {
         id: email.id
       },
@@ -915,7 +988,7 @@ export class Storage {
   }
 
   setWalletAddressChecked(walletId, totalAddresses, cb) {
-    this.db.collection(collections.CACHE).update(
+    this.db.collection(collections.CACHE).replaceOne(
       {
         walletId,
         type: 'addressChecked',
@@ -999,7 +1072,7 @@ export class Storage {
    */
   storeTxHistoryStreamV8(walletId, streamKey, items, cb) {
     // only 1 per wallet is allowed
-    this.db.collection(collections.CACHE).update(
+    this.db.collection(collections.CACHE).replaceOne(
       {
         walletId,
         type: 'historyStream',
@@ -1073,7 +1146,7 @@ export class Storage {
         pos = item.position;
         delete item.position;
         // console.log('STORING [storage.js.804:at:]',pos, item.blockheight);
-        this.db.collection(collections.CACHE).insert(
+        this.db.collection(collections.CACHE).insertOne(
           {
             walletId,
             type: 'historyCacheV8',
@@ -1094,35 +1167,31 @@ export class Storage {
         const last: CacheItem = _.last(items);
 
         try {
-          $.checkState(last.txid, 'missing txid in tx to be cached');
+          $.checkState(last.txid, 'Failed state: missing txid in tx to be cached at <storeHistoryCacheV8()>');
           $.checkState(
             last.blockheight,
-            'missing blockheight in tx to be cached'
+            'Failed state: missing blockheight in tx to be cached at <storeHistoryCacheV8()>'
           );
           $.checkState(
             first.blockheight,
-            'missing blockheight in tx to be cached'
+            'Failed state: missing blockheight in tx to be cached at <storeHistoryCacheV8()>'
           );
           $.checkState(
             last.blockheight >= 0,
-            'blockheight <=0 om tx to be cached'
+            'Failed state: blockheight <=0 om tx to be cached at <storeHistoryCacheV8()>'
           );
 
           // note there is a .reverse before.
           $.checkState(
             first.blockheight <= last.blockheight,
-            'tx to be cached are in wrong order (lastest should be first)'
+            'Failed state: tx to be cached are in wrong order (lastest should be first)'
           );
         } catch (e) {
           return cb(e);
         }
 
-        log.debug(
-          `Cache Last Item: ${last.txid} blockh: ${
-            last.blockheight
-          } updatedh: ${updateHeight}`
-        );
-        this.db.collection(collections.CACHE).update(
+        logger.debug(`Cache Last Item: ${last.txid} blockh: ${last.blockheight} updatedh: ${updateHeight}`);
+        this.db.collection(collections.CACHE).replaceOne(
           {
             walletId,
             type: 'historyCacheStatusV8',
@@ -1159,7 +1228,7 @@ export class Storage {
           code: rate.code,
           value: rate.value
         };
-        this.db.collection(collections.FIAT_RATES2).insert(
+        this.db.collection(collections.FIAT_RATES2).insertOne(
           i,
           {
             w: 1
@@ -1188,6 +1257,25 @@ export class Storage {
       .toArray((err, result) => {
         if (err || _.isEmpty(result)) return cb(err);
         return cb(null, result[0]);
+      });
+  }
+
+  fetchHistoricalRates(coin, code, ts, cb) {
+    this.db
+      .collection(collections.FIAT_RATES2)
+      .find({
+        coin,
+        code,
+        ts: {
+          $gte: ts
+        }
+      })
+      .sort({
+        ts: -1
+      })
+      .toArray((err, result) => {
+        if (err || _.isEmpty(result)) return cb(err);
+        return cb(null, result);
       });
   }
 
@@ -1245,7 +1333,7 @@ export class Storage {
   }
 
   storeTxNote(txNote, cb) {
-    this.db.collection(collections.TX_NOTES).update(
+    this.db.collection(collections.TX_NOTES).replaceOne(
       {
         txid: txNote.txid,
         walletId: txNote.walletId
@@ -1272,7 +1360,7 @@ export class Storage {
   }
 
   storeSession(session, cb) {
-    this.db.collection(collections.SESSIONS).update(
+    this.db.collection(collections.SESSIONS).replaceOne(
       {
         copayerId: session.copayerId
       },
@@ -1303,8 +1391,30 @@ export class Storage {
       });
   }
 
+  fetchLatestPushNotificationSubs(cb) {
+    const fromDate = new Date().getTime() - Defaults.PUSH_NOTIFICATION_SUBS_TIME;
+    this.db
+      .collection(collections.PUSH_NOTIFICATION_SUBS)
+      .find({
+        _id: {
+          $gte: new ObjectID(objectIdDate(fromDate))
+        }
+      })
+      .sort({ _id: -1 })
+      .toArray((err, result) => {
+        if (err) return cb(err);
+
+        if (!result) return cb();
+
+        const tokens = _.map([].concat(result), r => {
+          return PushNotificationSub.fromObj(r);
+        });
+        return cb(null, tokens);
+      });
+  }
+
   storePushNotificationSub(pushNotificationSub, cb) {
-    this.db.collection(collections.PUSH_NOTIFICATION_SUBS).update(
+    this.db.collection(collections.PUSH_NOTIFICATION_SUBS).replaceOne(
       {
         copayerId: pushNotificationSub.copayerId,
         token: pushNotificationSub.token
@@ -1319,7 +1429,7 @@ export class Storage {
   }
 
   removePushNotificationSub(copayerId, token, cb) {
-    this.db.collection(collections.PUSH_NOTIFICATION_SUBS).remove(
+    this.db.collection(collections.PUSH_NOTIFICATION_SUBS).deleteMany(
       {
         copayerId,
         token
@@ -1332,9 +1442,16 @@ export class Storage {
   }
 
   fetchActiveTxConfirmationSubs(copayerId, cb) {
+    // This should only happens in certain tests.
+    if (!this.db) {
+      logger.warn('Trying to fetch notifications with closed DB');
+      return;
+    }
+
     const filter: { isActive: boolean; copayerId?: string } = {
       isActive: true
     };
+
     if (copayerId) filter.copayerId = copayerId;
 
     this.db
@@ -1353,7 +1470,7 @@ export class Storage {
   }
 
   storeTxConfirmationSub(txConfirmationSub, cb) {
-    this.db.collection(collections.TX_CONFIRMATION_SUBS).update(
+    this.db.collection(collections.TX_CONFIRMATION_SUBS).replaceOne(
       {
         copayerId: txConfirmationSub.copayerId,
         txid: txConfirmationSub.txid
@@ -1368,7 +1485,7 @@ export class Storage {
   }
 
   removeTxConfirmationSub(copayerId, txid, cb) {
-    this.db.collection(collections.TX_CONFIRMATION_SUBS).remove(
+    this.db.collection(collections.TX_CONFIRMATION_SUBS).deleteMany(
       {
         copayerId,
         txid
@@ -1392,9 +1509,7 @@ export class Storage {
           col.find().toArray((err, items) => {
             fn('--------', col.s.name);
             fn(items);
-            fn(
-              '------------------------------------------------------------------\n\n'
-            );
+            fn('------------------------------------------------------------------\n\n');
             next(err);
           });
         },
@@ -1428,7 +1543,7 @@ export class Storage {
 
   storeGlobalCache(key, values, cb) {
     const now = Date.now();
-    this.db.collection(collections.CACHE).update(
+    this.db.collection(collections.CACHE).replaceOne(
       {
         key,
         walletId: null,
@@ -1449,7 +1564,7 @@ export class Storage {
   }
 
   clearGlobalCache(key, cb) {
-    this.db.collection(collections.CACHE).remove(
+    this.db.collection(collections.CACHE).deleteMany(
       {
         key,
         walletId: null,
@@ -1466,17 +1581,13 @@ export class Storage {
     const { walletId } = params;
 
     return new Promise(resolve => {
-      const addressStream = this.db
-        .collection(collections.ADDRESSES)
-        .find({ walletId });
+      const addressStream = this.db.collection(collections.ADDRESSES).find({ walletId });
       let sum = 0;
       let lastAddress;
       addressStream.on('data', walletAddress => {
         if (walletAddress.address) {
-          lastAddress = walletAddress.address;
-          const addressSum = Buffer.from(lastAddress).reduce(
-            (tot, cur) => (tot + cur) % Number.MAX_SAFE_INTEGER
-          );
+          lastAddress = walletAddress.address.replace(/:.*$/, '');
+          const addressSum = Buffer.from(lastAddress).reduce((tot, cur) => (tot + cur) % Number.MAX_SAFE_INTEGER);
           sum = (sum + addressSum) % Number.MAX_SAFE_INTEGER;
         }
       });
@@ -1484,10 +1595,10 @@ export class Storage {
         resolve({ lastAddress, sum });
       });
     });
-  }
+  };
 
   acquireLock(key, expireTs, cb) {
-    this.db.collection(collections.LOCKS).insert(
+    this.db.collection(collections.LOCKS).insertOne(
       {
         _id: key,
         expireOn: expireTs
@@ -1498,7 +1609,7 @@ export class Storage {
   }
 
   releaseLock(key, cb) {
-    this.db.collection(collections.LOCKS).remove(
+    this.db.collection(collections.LOCKS).deleteMany(
       {
         _id: key
       },
@@ -1516,11 +1627,121 @@ export class Storage {
         if (err || !ret) return;
 
         if (ret.expireOn < Date.now()) {
-          log.info('Releasing expired lock : ' + key);
+          logger.info('Releasing expired lock : ' + key);
           return this.releaseLock(key, cb);
         }
         return cb();
       }
+    );
+  }
+
+  fetchTestingAdverts(cb) {
+    this.db
+      .collection(collections.ADVERTISEMENTS)
+      .find({
+        isTesting: true
+      })
+      .toArray((err, result) => {
+        if (err) return cb(err);
+        if (!result) return cb();
+        return cb(null, result.map(Advertisement.fromObj));
+      });
+  }
+
+  fetchActiveAdverts(cb) {
+    this.db
+      .collection(collections.ADVERTISEMENTS)
+      .find({
+        isAdActive: true
+      })
+      .toArray((err, result) => {
+        if (err) return cb(err);
+        if (!result) return cb();
+        return cb(null, result.map(Advertisement.fromObj));
+      });
+  }
+
+  fetchAdvertsByCountry(country, cb) {
+    this.db
+      .collection(collections.ADVERTISEMENTS)
+      .find({
+        country
+      })
+      .toArray((err, result) => {
+        if (err) return cb(err);
+        if (!result) return cb();
+        return cb(null, result.map(Advertisement.fromObj));
+      });
+  }
+
+  fetchAllAdverts(cb) {
+    this.db.collection(collections.ADVERTISEMENTS).find({});
+  }
+
+  removeAdvert(adId, cb) {
+    this.db.collection(collections.ADVERTISEMENTS).deleteOne(
+      {
+        advertisementId: adId
+      },
+      {
+        w: 1
+      },
+      cb
+    );
+  }
+
+  storeAdvert(advert, cb) {
+    this.db.collection(collections.ADVERTISEMENTS).updateOne(
+      {
+        advertisementId: advert.advertisementId
+      },
+      { $set: advert },
+      {
+        upsert: true
+      },
+      cb
+    );
+  }
+
+  fetchAdvert(adId, cb) {
+    this.db.collection(collections.ADVERTISEMENTS).findOne(
+      {
+        advertisementId: adId
+      },
+      (err, result) => {
+        if (err) return cb(err);
+        if (!result) return cb();
+
+        return cb(null, Advertisement.fromObj(result));
+      }
+    );
+  }
+
+  activateAdvert(adId, cb) {
+    this.db.collection(collections.ADVERTISEMENTS).updateOne(
+      {
+        advertisementId: adId
+      },
+      { $set: { isAdActive: true, isTesting: false } },
+      {
+        upsert: true
+      },
+      cb
+    );
+  }
+
+  deactivateAdvert(adId, cb) {
+    this.db.collection(collections.ADVERTISEMENTS).updateOne(
+      {
+        advertisementId: adId
+      },
+      {
+        $set: { isAdActive: false, isTesting: true }
+      },
+      {
+        upsert: true
+      },
+      cb
     );
   }
 }

@@ -1,10 +1,10 @@
 import * as requestStream from 'request';
 import * as request from 'request-promise-native';
-import * as secp256k1 from 'secp256k1';
 import { URL } from 'url';
+import logger from '../../logger';
 
 const bitcoreLib = require('bitcore-lib');
-
+const secp256k1 = require('secp256k1');
 export class Client {
   authKey: { bn: { toBuffer: (arg) => Buffer } };
   baseUrl: string;
@@ -13,18 +13,16 @@ export class Client {
     Object.assign(this, params);
   }
 
-  sign(params) {
+  getMessage(params: { method: string; url: string; payload?: any }) {
     const { method, url, payload = {} } = params;
     const parsedUrl = new URL(url);
-    const message = [
-      method,
-      parsedUrl.pathname + parsedUrl.search,
-      JSON.stringify(payload)
-    ].join('|');
+    return [method, parsedUrl.pathname + parsedUrl.search, JSON.stringify(payload)].join('|');
+  }
+
+  sign(params: { method: string; url: string; payload?: any }) {
+    const message = this.getMessage(params);
     const privateKey = this.authKey.bn.toBuffer({ size: 32 });
-    const messageHash = bitcoreLib.crypto.Hash.sha256sha256(
-      Buffer.from(message)
-    );
+    const messageHash = bitcoreLib.crypto.Hash.sha256sha256(Buffer.from(message));
 
     return secp256k1.sign(messageHash, privateKey).signature.toString('hex');
   }
@@ -43,9 +41,19 @@ export class Client {
   }
 
   async getBalance(params) {
-    const { payload, pubKey } = params;
-    const url = `${this.baseUrl}/wallet/${pubKey}/balance`;
-    console.log('[client.js.37:url:]', url); // TODO
+    const { payload, pubKey, tokenAddress, multisigContractAddress } = params;
+    let query = '';
+    let apiUrl = `${this.baseUrl}/wallet/${pubKey}/balance`;
+
+    if (tokenAddress) {
+      query = `?tokenAddress=${tokenAddress}`;
+    }
+
+    if (multisigContractAddress) {
+      apiUrl = `${this.baseUrl}/address/${multisigContractAddress}/balance`;
+    }
+
+    const url = apiUrl + query;
     const signature = this.sign({ method: 'GET', url, payload });
     return request.get(url, {
       headers: { 'x-signature': signature },
@@ -57,7 +65,7 @@ export class Client {
   async getCheckData(params) {
     const { payload, pubKey } = params;
     const url = `${this.baseUrl}/wallet/${pubKey}/check`;
-    console.log('WALLET CHECK ', url); // TODO
+    logger.debug('WALLET CHECK');
     const signature = this.sign({ method: 'GET', url, payload });
     return request.get(url, {
       headers: { 'x-signature': signature },
@@ -78,7 +86,6 @@ export class Client {
   async getTx(params) {
     const { txid } = params;
     const url = `${this.baseUrl}/tx/${txid}`;
-    console.log('[client.js.59:url:]', url); // TODO
     return request.get(url, {
       json: true
     });
@@ -92,11 +99,20 @@ export class Client {
       extra = `?includeSpent=${includeSpent}`;
     }
     const url = `${this.baseUrl}/wallet/${pubKey}/utxos${extra}`;
-    console.log('GET UTXOS:', url); // TODO
+    logger.debug('GET UTXOS:', url);
     const signature = this.sign({ method: 'GET', url, payload });
     return request.get(url, {
       headers: { 'x-signature': signature },
       body: payload,
+      json: true
+    });
+  }
+
+  async getCoinsForTx(params) {
+    const { txId } = params;
+    const url = `${this.baseUrl}/tx/${txId}/coins`;
+    logger.debug('GET COINS FOR TX:', url);
+    return request.get(url, {
       json: true
     });
   }
@@ -108,20 +124,30 @@ export class Client {
       startDate,
       endBlock,
       endDate,
-      includeMempool
+      includeMempool,
+      tokenAddress,
+      multisigContractAddress
     } = params;
-    let url = `${this.baseUrl}/wallet/${pubKey}/transactions?`;
+    let query = '';
+    let apiUrl = `${this.baseUrl}/wallet/${pubKey}/transactions?`;
     if (startBlock) {
-      url += `startBlock=${startBlock}&`;
+      query += `startBlock=${startBlock}&`;
     }
     if (endBlock) {
-      url += `endBlock=${endBlock}&`;
+      query += `endBlock=${endBlock}&`;
+    }
+    if (tokenAddress) {
+      query += `tokenAddress=${tokenAddress}&`;
+    }
+    if (multisigContractAddress) {
+      apiUrl = `${this.baseUrl}/ethmultisig/transactions/${multisigContractAddress}?`;
     }
     if (includeMempool) {
-      url += 'includeMempool=true';
+      query += 'includeMempool=true';
     }
+    const url = apiUrl + query;
     const signature = this.sign({ method: 'GET', url });
-    console.log('[client.js.96:url:]', url); // TODO
+    logger.debug('List transactions', url);
     return requestStream.get(url, {
       headers: { 'x-signature': signature },
       json: true
@@ -132,7 +158,7 @@ export class Client {
     const { payload, pubKey } = params;
     const url = `${this.baseUrl}/wallet/${pubKey}`;
 
-    console.log('addAddresses:', url, payload); // TODO
+    logger.debug('addAddresses:', url, payload);
     const signature = this.sign({ method: 'POST', url, payload });
     const h = { 'x-signature': signature };
     return request.post(url, {
@@ -145,7 +171,7 @@ export class Client {
   async broadcast(params) {
     const { payload } = params;
     const url = `${this.baseUrl}/tx/send`;
-    console.log('[client.js.113:url:]', url); // TODO
+    logger.debug('Broadcast', url);
     return request.post(url, { body: payload, json: true });
   }
 }

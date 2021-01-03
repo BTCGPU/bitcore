@@ -1,10 +1,27 @@
 'use strict';
+import * as CWC from 'crypto-wallet-core';
 
 module.exports = {
   COINS: {
     BTC: 'btc',
     BCH: 'bch',
-    ETH: 'eth'
+    ETH: 'eth',
+    XRP: 'xrp',
+    USDC: 'usdc',
+    PAX: 'pax',
+    GUSD: 'gusd',
+    BUSD: 'busd',
+    DAI: 'dai',
+    WBTC: 'wbtc'
+  },
+
+  ERC20: {
+    USDC: 'usdc',
+    PAX: 'pax',
+    GUSD: 'gusd',
+    BUSD: 'busd',
+    DAI: 'dai',
+    WBTC: 'wbtc'
   },
 
   UTXO_COINS: {
@@ -21,7 +38,9 @@ module.exports = {
 
   SCRIPT_TYPES: {
     P2SH: 'P2SH',
-    P2PKH: 'P2PKH'
+    P2WSH: 'P2WSH',
+    P2PKH: 'P2PKH',
+    P2WPKH: 'P2WPKH'
   },
   DERIVATION_STRATEGIES: {
     BIP44: 'BIP44',
@@ -35,5 +54,7 @@ module.exports = {
     REQUEST_KEY_AUTH: 'm/2' // relative to BASE
   },
 
-  BIP45_SHARED_INDEX: 0x80000000 - 1
+  BIP45_SHARED_INDEX: 0x80000000 - 1,
+
+  TOKEN_OPTS: CWC.Constants.TOKEN_OPTS
 };

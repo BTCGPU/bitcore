@@ -1,27 +1,54 @@
-import * as _ from 'lodash';
 import { ObjectID } from 'bson';
-import logger from '../../../logger';
+import * as _ from 'lodash';
 import { LoggifyClass } from '../../../decorators/Loggify';
-import { IEthTransaction, EthTransactionJSON } from '../types';
-import { StorageService, Storage } from '../../../services/storage';
-import { partition } from '../../../utils/partition';
-import { TransformOptions } from '../../../types/TransformOptions';
+import logger from '../../../logger';
 import { MongoBound } from '../../../models/base';
-import { WalletAddressStorage } from '../../../models/walletAddress';
-import { SpentHeightIndicators } from '../../../types/Coin';
-import { EventStorage } from '../../../models/events';
-import { Config } from '../../../services/config';
-import { StreamingFindOptions } from '../../../types/Query';
-import { ERC721Abi } from '../abi/erc721';
-import { ERC20Abi } from '../abi/erc20';
 import { BaseTransaction } from '../../../models/baseTransaction';
+import { CacheStorage } from '../../../models/cache';
+import { EventStorage } from '../../../models/events';
+import { WalletAddressStorage } from '../../../models/walletAddress';
+import { Config } from '../../../services/config';
+import { Storage, StorageService } from '../../../services/storage';
+import { SpentHeightIndicators } from '../../../types/Coin';
+import { StreamingFindOptions } from '../../../types/Query';
+import { TransformOptions } from '../../../types/TransformOptions';
 import { valueOrDefault } from '../../../utils/check';
+import { partition } from '../../../utils/partition';
+import { ERC20Abi } from '../abi/erc20';
+import { ERC721Abi } from '../abi/erc721';
+import { InvoiceAbi } from '../abi/invoice';
+import { MultisigAbi } from '../abi/multisig';
 
-const Erc20Decoder = require('abi-decoder');
+import { EthTransactionJSON, IEthTransaction } from '../types';
+
+function requireUncached(module) {
+  delete require.cache[require.resolve(module)];
+  return require(module);
+}
+
+const Erc20Decoder = requireUncached('abi-decoder');
 Erc20Decoder.addABI(ERC20Abi);
+function getErc20Decoder() {
+  return Erc20Decoder;
+}
 
-const Erc721Decoder = require('abi-decoder');
+const Erc721Decoder = requireUncached('abi-decoder');
 Erc721Decoder.addABI(ERC721Abi);
+function getErc721Decoder() {
+  return Erc721Decoder;
+}
+
+const InvoiceDecoder = requireUncached('abi-decoder');
+InvoiceDecoder.addABI(InvoiceAbi);
+function getInvoiceDecoder() {
+  return InvoiceDecoder;
+}
+
+const MultisigDecoder = requireUncached('abi-decoder');
+MultisigDecoder.addABI(MultisigAbi);
+function getMultisigDecoder() {
+  return MultisigDecoder;
+}
 
 @LoggifyClass
 export class EthTransactionModel extends BaseTransaction<IEthTransaction> {
@@ -29,15 +56,23 @@ export class EthTransactionModel extends BaseTransaction<IEthTransaction> {
     super(storage);
   }
 
-  onConnect() {
+  async onConnect() {
     super.onConnect();
     this.collection.createIndex({ chain: 1, network: 1, to: 1 }, { background: true, sparse: true });
+    this.collection.createIndex({ chain: 1, network: 1, from: 1 }, { background: true, sparse: true });
     this.collection.createIndex({ chain: 1, network: 1, from: 1, nonce: 1 }, { background: true, sparse: true });
     this.collection.createIndex(
-      { chain: 1, network: 1, 'abiType.params.0.value': 1 },
+      { chain: 1, network: 1, 'abiType.params.0.value': 1, blockTimeNormalized: 1 },
       {
         background: true,
         partialFilterExpression: { chain: 'ETH', 'abiType.type': 'ERC20', 'abiType.name': 'transfer' }
+      }
+    );
+    this.collection.createIndex(
+      { chain: 1, network: 1, 'internal.action.to': 1 },
+      {
+        background: true,
+        sparse: true
       }
     );
   }
@@ -55,14 +90,23 @@ export class EthTransactionModel extends BaseTransaction<IEthTransaction> {
     network: string;
     initialSyncComplete: boolean;
   }) {
-    await this.pruneMempool({ ...params });
+    const operations = [] as Array<Promise<any>>;
+    operations.push(this.pruneMempool({ ...params }));
     const txOps = await this.addTransactions({ ...params });
     logger.debug('Writing Transactions', txOps.length);
-    await Promise.all(
-      partition(txOps, txOps.length / Config.get().maxPoolSize).map(txBatch =>
-        this.collection.bulkWrite(txBatch.map(op => this.toMempoolSafeUpsert(op, params.height)), { ordered: false })
+    operations.push(
+      ...partition(txOps, txOps.length / Config.get().maxPoolSize).map(txBatch =>
+        this.collection.bulkWrite(
+          txBatch.map(op => this.toMempoolSafeUpsert(op, params.height)),
+          { ordered: false }
+        )
       )
     );
+    await Promise.all(operations);
+
+    if (params.initialSyncComplete) {
+      await this.expireBalanceCache(txOps);
+    }
 
     // Create events for mempool txs
     if (params.height < SpentHeightIndicators.minimum) {
@@ -74,6 +118,34 @@ export class EthTransactionModel extends BaseTransaction<IEthTransaction> {
           address: tx.to,
           coin: { value: tx.value, address: tx.to, chain: params.chain, network: params.network, mintTxid: tx.txid }
         });
+      }
+    }
+  }
+
+  async expireBalanceCache(txOps: Array<any>) {
+    for (const op of txOps) {
+      let batch = new Array<{ multisigContractAdress?: string; tokenAddress?: string; address: string }>();
+      const { chain, network } = op.updateOne.filter;
+      const { from, to, abiType, internal } = op.updateOne.update.$set;
+      batch = batch.concat([{ address: from }, { address: to }]);
+      if (abiType && abiType.type === 'ERC20' && abiType.params.length) {
+        batch.push({ address: from, tokenAddress: to });
+        batch.push({ address: abiType.params[0].value, tokenAddress: to });
+      }
+
+      if (internal && internal.length > 0) {
+        internal.forEach(i => {
+          if (i.action.to) batch.push({ address: i.action.to });
+          if (i.action.from) batch.push({ address: i.action.from });
+        });
+      }
+
+      for (const payload of batch) {
+        const lowerAddress = payload.address.toLowerCase();
+        const cacheKey = payload.tokenAddress
+          ? `getBalanceForAddress-${chain}-${network}-${lowerAddress}-${to.toLowerCase()}`
+          : `getBalanceForAddress-${chain}-${network}-${lowerAddress}`;
+        await CacheStorage.expire(cacheKey);
       }
     }
   }
@@ -117,7 +189,10 @@ export class EthTransactionModel extends BaseTransaction<IEthTransaction> {
           const { to, txid, from } = tx;
           const sentWallets = await WalletAddressStorage.collection.find({ chain, network, address: from }).toArray();
           const receivedWallets = await WalletAddressStorage.collection.find({ chain, network, address: to }).toArray();
-          const wallets = _.uniqBy(sentWallets.concat(receivedWallets).map(w => w.wallet), w => w.toHexString());
+          const wallets = _.uniqBy(
+            sentWallets.concat(receivedWallets).map(w => w.wallet),
+            w => w.toHexString()
+          );
 
           return {
             updateOne: {
@@ -151,34 +226,20 @@ export class EthTransactionModel extends BaseTransaction<IEthTransaction> {
     if (!initialSyncComplete) {
       return;
     }
-    const users = txs.map(tx => tx.from);
-    let invalidatedTxs = await this.collection
-      .find({
-        chain,
-        network,
-        from: { $in: users },
-        blockHeight: SpentHeightIndicators.pending
-      })
-      .toArray();
-
-    invalidatedTxs = invalidatedTxs.filter(
-      toFilter =>
-        txs.findIndex(
-          truth => toFilter.from === truth.from && toFilter.nonce === truth.nonce && toFilter.txid !== truth.txid
-        ) > -1
-    );
-
-    await this.collection.update(
-      {
-        chain,
-        network,
-        txid: { $in: invalidatedTxs.map(tx => tx.txid) },
-        blockHeight: SpentHeightIndicators.pending
-      },
-      { $set: { blockHeight: SpentHeightIndicators.conflicting } },
-      { w: 0, j: false, multi: true }
-    );
-
+    for (const tx of txs) {
+      await this.collection.update(
+        {
+          chain,
+          network,
+          from: tx.from,
+          nonce: tx.nonce,
+          txid: { $ne: tx.txid },
+          blockHeight: SpentHeightIndicators.pending
+        },
+        { $set: { blockHeight: SpentHeightIndicators.conflicting } },
+        { w: 0, j: false, multi: true }
+      );
+    }
     return;
   }
 
@@ -191,28 +252,42 @@ export class EthTransactionModel extends BaseTransaction<IEthTransaction> {
 
   abiDecode(input: string) {
     try {
-      try {
-        const decodedData = Erc20Decoder.decodeMethod(input);
-        if (!decodedData || decodedData.length === 0) {
-          throw new Error();
-        }
+      const erc20Data = getErc20Decoder().decodeMethod(input);
+      if (erc20Data) {
         return {
           type: 'ERC20',
-          ...decodedData
-        };
-      } catch {
-        const decodedData = Erc721Decoder.decodeMethod(input);
-        if (!decodedData || decodedData.length === 0) {
-          throw new Error();
-        }
-        return {
-          type: 'ERC721',
-          ...decodedData
+          ...erc20Data
         };
       }
-    } catch {
-      return undefined;
-    }
+    } catch (e) {}
+    try {
+      const erc721Data = getErc721Decoder().decodeMethod(input);
+      if (erc721Data) {
+        return {
+          type: 'ERC721',
+          ...erc721Data
+        };
+      }
+    } catch (e) {}
+    try {
+      const invoiceData = getInvoiceDecoder().decodeMethod(input);
+      if (invoiceData) {
+        return {
+          type: 'INVOICE',
+          ...invoiceData
+        };
+      }
+    } catch (e) {}
+    try {
+      const multisigData = getMultisigDecoder().decodeMethod(input);
+      if (multisigData) {
+        return {
+          type: 'MULTISIG',
+          ...multisigData
+        };
+      }
+    } catch (e) {}
+    return undefined;
   }
 
   _apiTransform(
@@ -242,7 +317,8 @@ export class EthTransactionModel extends BaseTransaction<IEthTransaction> {
       internal: tx.internal
         ? tx.internal.map(t => ({ ...t, decodedData: this.abiDecode(t.action.input || '0x') }))
         : [],
-      decodedData: valueOrDefault(decodedData, undefined)
+      decodedData: valueOrDefault(decodedData, undefined),
+      receipt: valueOrDefault(tx.receipt, undefined)
     };
     if (options && options.object) {
       return transaction;

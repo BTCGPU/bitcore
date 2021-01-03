@@ -5,10 +5,6 @@ const $ = require('preconditions').singleton();
 const Common = require('./common');
 const Defaults = Common.Defaults;
 const Errors = require('./errors/errordefinitions');
-let log = require('npmlog');
-log.debug = log.verbose;
-log.disableColor();
-
 const ACQUIRE_RETRY_STEP = 50; // ms
 
 export class Lock {
@@ -28,7 +24,7 @@ export class Lock {
       // Lock taken?
       if (err && err.message && err.message.indexOf('E11000 ') !== -1) {
         // Lock expired?
-        this.storage.clearExpiredLock(token, () => { });
+        this.storage.clearExpiredLock(token, () => {});
         // Waiting time for lock has expired
         if (timeLeft < 0) {
           return cb('LOCKED');
@@ -42,10 +38,7 @@ export class Lock {
           }
         }
 
-        return setTimeout(
-          this.acquire.bind(this, token, opts, cb, timeLeft),
-          ACQUIRE_RETRY_STEP
-        );
+        return setTimeout(this.acquire.bind(this, token, opts, cb, timeLeft), ACQUIRE_RETRY_STEP);
 
         // Actual DB error
       } else if (err) {
@@ -54,7 +47,7 @@ export class Lock {
         // Lock available
       } else {
         return cb(null, icb => {
-          if (!icb) icb = () => { };
+          if (!icb) icb = () => {};
           this.storage.releaseLock(token, icb);
         });
       }
@@ -62,7 +55,7 @@ export class Lock {
   }
 
   runLocked(token, opts, cb, task) {
-    $.shouldBeDefined(token);
+    $.shouldBeDefined(token, 'Failed state: token undefined at <runLocked()>');
 
     this.acquire(token, opts, (err, release) => {
       if (err == 'LOCKED') return cb(Errors.WALLET_BUSY);

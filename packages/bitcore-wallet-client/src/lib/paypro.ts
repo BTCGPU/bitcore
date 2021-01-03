@@ -1,11 +1,10 @@
-
 import { BitcoreLib, BitcoreLibCash } from 'crypto-wallet-core';
 
 var $ = require('preconditions').singleton();
 const URL = require('url');
 const _ = require('lodash');
 const superagent = require('superagent');
-var Bitcore = BitcoreLib;
+const Bitcore = BitcoreLib;
 const Errors = require('./errors');
 var Bitcore_ = {
   btc: Bitcore,
@@ -131,14 +130,16 @@ export class PayPro {
     $.checkArgument(opts.network, 'should pass network');
     var r = this.r[opts.method.toLowerCase()](opts.url);
     _.each(opts.headers, function (v, k) {
-      if (v)
-        r.set(k, v);
+      if (v) r.set(k, v);
     });
     if (opts.args) {
-      if (opts.method.toLowerCase() == 'post' || opts.method.toLowerCase() == 'put') {
-          r.send(opts.args);
+      if (
+        opts.method.toLowerCase() == 'post' ||
+        opts.method.toLowerCase() == 'put'
+      ) {
+        r.send(opts.args);
       } else {
-          r.query(opts.args);
+        r.query(opts.args);
       }
     }
     r.end((err, res) => {
@@ -147,11 +148,11 @@ export class PayPro {
       if (!res || res.statusCode != 200) {
         // some know codes
         if (res.statusCode == 400) {
-          return cb(new Errors.INVOICE_EXPIRED);
+          return cb(new Errors.INVOICE_EXPIRED());
         } else if (res.statusCode == 404) {
-          return cb(new Errors.INVOICE_NOT_AVAILABLE);
+          return cb(new Errors.INVOICE_NOT_AVAILABLE());
         } else if (res.statusCode == 422) {
-          return cb(new Errors.UNCONFIRMED_INPUTS_NOT_ACCEPTED);
+          return cb(new Errors.UNCONFIRMED_INPUTS_NOT_ACCEPTED());
         }
 
         let m = res ? res.statusMessage || res.statusCode : '';
@@ -216,13 +217,13 @@ export class PayPro {
 
     var COIN = coin.toUpperCase();
     opts.headers = opts.headers || {
-      'Accept': JSON_PAYMENT_REQUEST_CONTENT_TYPE,
+      Accept: JSON_PAYMENT_REQUEST_CONTENT_TYPE,
       'Content-Type': 'application/octet-stream'
     };
     opts.method = 'GET';
     opts.network = opts.network || 'livenet';
 
-    PayPro.runRequest(opts, function(err, data) {
+    PayPro.runRequest(opts, function (err, data) {
       if (err) return cb(err);
 
       var ret: any = {};
@@ -302,7 +303,7 @@ export class PayPro {
     opts.noVerify = true;
 
     // verify request
-    PayPro.runRequest(opts, function(err, rawData) {
+    PayPro.runRequest(opts, function (err, rawData) {
       if (err) {
         console.log(
           'Error at verify-payment:',
@@ -314,7 +315,7 @@ export class PayPro {
 
       opts.headers = {
         'Content-Type': JSON_PAYMENT_CONTENT_TYPE,
-        'Accept': JSON_PAYMENT_ACK_CONTENT_TYPE
+        Accept: JSON_PAYMENT_ACK_CONTENT_TYPE
       };
 
       if (opts.bp_partner) {
@@ -332,7 +333,7 @@ export class PayPro {
       // Do not verify payment message's response
       opts.noVerify = true;
 
-      PayPro.runRequest(opts, function(err, rawData) {
+      PayPro.runRequest(opts, function (err, rawData) {
         if (err) {
           console.log(
             'Error at payment:',

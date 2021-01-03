@@ -1,6 +1,6 @@
-import { BitcoinP2PWorker } from '../bitcoin/p2p';
 import { BaseModule } from '..';
 import { BTGStateProvider } from '../../providers/chain-state/btg/btg';
+import { BitcoinP2PWorker } from '../bitcoin/p2p';
 
 export default class BTGModule extends BaseModule {
   constructor(services) {

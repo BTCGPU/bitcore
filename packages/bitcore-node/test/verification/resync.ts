@@ -1,7 +1,7 @@
 import { Config } from '../../src/services/config';
 import { Storage } from '../../src/services/storage';
-import { BitcoinP2PWorker } from '../../src/modules/bitcoin/p2p';
 import { Modules } from '../../src/modules';
+import { VerificationPeer } from '../../src/modules/bitcoin/VerificationPeer';
 
 // Load modules
 Modules.loadConfigured();
@@ -14,7 +14,7 @@ Modules.loadConfigured();
   } else {
     await Storage.start();
     const chainConfig = Config.chainConfig({ chain, network });
-    const worker = new BitcoinP2PWorker({ chain, network, chainConfig });
+    const worker = new VerificationPeer({ chain, network, chainConfig });
     await worker.connect();
 
     await worker.resync(Number(START), Number(END));

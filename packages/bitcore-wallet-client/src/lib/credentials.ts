@@ -42,7 +42,9 @@ export class Credentials {
     'use145forBCH', // Obsolete
     'version',
     'rootPath', // this is only for information
-    'keyId' // this is only for information
+    'keyId', // this is only for information
+    'token', // this is for a ERC20 token
+    'multisigEthInfo' // this is for a MULTISIG eth wallet
   ];
   version: number;
   account: number;
@@ -61,9 +63,11 @@ export class Credentials {
   network: string;
   coin: string;
   use145forBCH: any;
+
   addressType: string;
   keyId: string;
-
+  token?: string;
+  multisigEthInfo?: any;
   externalSource?: boolean; // deprecated property?
 
   constructor() {
@@ -132,6 +136,42 @@ export class Credentials {
 
     return x;
   }
+
+  /*
+   * creates an ERC20 wallet from a ETH wallet
+   */
+  getTokenCredentials(token: {
+    name: string;
+    symbol: string;
+    address: string;
+  }) {
+    const ret = _.cloneDeep(this);
+    ret.walletId = `${ret.walletId}-${token.address}`;
+    ret.coin = token.symbol.toLowerCase();
+    ret.walletName = token.name;
+    ret.token = token;
+
+    return ret;
+  }
+
+  /*
+   * creates a Multisig wallet from a ETH wallet
+   */
+  getMultisigEthCredentials(multisigEthInfo: {
+    multisigContractAddress: string;
+    walletName: string;
+    n: string;
+    m: string;
+  }) {
+    const ret = _.cloneDeep(this);
+    ret.walletId = `${ret.walletId}-${multisigEthInfo.multisigContractAddress}`;
+    ret.walletName = multisigEthInfo.walletName;
+    ret.n = multisigEthInfo.n;
+    ret.m = multisigEthInfo.m;
+    ret.multisigEthInfo = multisigEthInfo;
+    return ret;
+  }
+
   getRootPath() {
     // This is for OLD v1.0 credentials only.
     var legacyRootPath = () => {
@@ -149,7 +189,10 @@ export class Credentials {
       }
 
       var coin = '0';
-      if (this.network != 'livenet' && this.coin !== 'eth') {
+      if (
+        this.network != 'livenet' &&
+        Constants.UTXO_COINS.includes(this.coin)
+      ) {
         coin = '1';
       } else if (this.coin == 'bch') {
         if (this.use145forBCH) {
@@ -161,6 +204,8 @@ export class Credentials {
         coin = '0';
       } else if (this.coin == 'eth') {
         coin = '60';
+      } else if (this.coin == 'xrp') {
+        coin = '144';
       } else {
         throw new Error('unknown coin: ' + this.coin);
       }
@@ -198,7 +243,7 @@ export class Credentials {
 
     $.checkState(
       x.xPrivKey || x.xPubKey || x.xPrivKeyEncrypted,
-      'invalid input'
+      'Failed State: x.xPrivKey | x.xPubkey | x.xPrivKeyEncrypted at fromObj'
     );
     return x;
   }
@@ -222,6 +267,11 @@ export class Credentials {
     this.walletId = walletId;
     this.walletName = walletName;
     this.m = m;
+
+    if (opts.useNativeSegwit) {
+      this.addressType =
+        n == 1 ? Constants.SCRIPT_TYPES.P2WPKH : Constants.SCRIPT_TYPES.P2WSH;
+    }
 
     if (this.n != n && !opts.allowOverwrite) {
       // we always allow multisig n overwrite
@@ -256,7 +306,10 @@ export class Credentials {
 
   isComplete() {
     if (!this.m || !this.n) return false;
-    if (!this.publicKeyRing || this.publicKeyRing.length != this.n)
+    if (
+      (this.coin === 'btc' || this.coin === 'bch') &&
+      (!this.publicKeyRing || this.publicKeyRing.length != this.n)
+    )
       return false;
     return true;
   }

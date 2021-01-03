@@ -1,7 +1,7 @@
-import { homedir, cpus } from 'os';
-import parseArgv from './utils/parseArgv';
-import { ConfigType } from './types/Config';
 import * as _ from 'lodash';
+import { cpus, homedir } from 'os';
+import { ConfigType } from './types/Config';
+import parseArgv from './utils/parseArgv';
 let program = parseArgv([], ['config']);
 
 function findConfig(): ConfigType | undefined {
@@ -19,6 +19,11 @@ function findConfig(): ConfigType | undefined {
   if (overrideConfig) {
     bitcoreConfigPaths.unshift(overrideConfig);
   }
+  console.log({
+    overrideConfig,
+    argConfigPath,
+    envConfigPath
+  });
   // No config specified. Search home, bitcore and cur directory
   for (let path of bitcoreConfigPaths) {
     if (!foundConfig) {
@@ -27,10 +32,12 @@ function findConfig(): ConfigType | undefined {
         const bitcoreConfig = require(expanded) as { bitcoreNode: ConfigType };
         foundConfig = bitcoreConfig.bitcoreNode;
       } catch (e) {
+        console.log('Error loading config:', e);
         foundConfig = undefined;
       }
     }
   }
+  console.dir(foundConfig);
   return foundConfig;
 }
 
@@ -73,14 +80,16 @@ const Config = function(): ConfigType {
         },
         wallets: {
           allowCreationBeforeCompleteSync: false,
-          allowUnauthenticatedCalls: true
+          allowUnauthenticatedCalls: false
         }
       },
       event: {
         onlyWalletEvents: false
       },
       p2p: {},
-      socket: {},
+      socket: {
+        bwsKeys: []
+      },
       storage: {}
     }
   };

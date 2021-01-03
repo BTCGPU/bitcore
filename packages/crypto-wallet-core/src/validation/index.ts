@@ -2,6 +2,7 @@ import { BchValidation } from './bch';
 import { BtcValidation } from './btc';
 import { BtgValidation } from './btg';
 import { EthValidation } from './eth';
+import { XrpValidation } from './xrp';
 
 export interface IValidation {
   validateAddress(network: string, address: string): boolean;
@@ -12,7 +13,8 @@ const validation: { [chain: string]: IValidation } = {
   BTC: new BtcValidation(),
   BTG: new BtgValidation(),
   BCH: new BchValidation(),
-  ETH: new EthValidation()
+  ETH: new EthValidation(),
+  XRP: new XrpValidation()
 };
 
 export class ValidationProxy {

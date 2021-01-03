@@ -38,7 +38,8 @@ var levels = {
 };
 
 _.each(levels, function (level, levelName) {
-  if (levelName === 'silent') { // dont create a log.silent() method
+  if (levelName === 'silent') {
+    // dont create a log.silent() method
     return;
   }
   Logger.prototype[levelName] = function () {
@@ -47,7 +48,6 @@ _.each(levels, function (level, levelName) {
     }
 
     if (level >= levels[this.level]) {
-
       if (Error.stackTraceLimit && this.level == 'debug') {
         var old = Error.stackTraceLimit;
         Error.stackTraceLimit = 2;

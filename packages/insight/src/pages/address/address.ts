@@ -46,13 +46,13 @@ export class AddressPage {
     this.apiProvider.changeNetwork(this.chainNetwork);
     this.currencyProvider.setCurrency(this.chainNetwork);
     this.priceProvider.setCurrency();
-
-    this.events.subscribe('CoinList', (d: any) => {
-      this.nroTransactions = d.length;
-    });
   }
 
   public ionViewWillLoad(): void {
+    this.events.subscribe('CoinList', (d: any) => {
+      this.nroTransactions = d.length;
+    });
+
     this.addrProvider
       .getAddressBalance(this.addrStr, this.chainNetwork)
       .subscribe(

@@ -16,19 +16,19 @@ describe('Point', function() {
     x: 'ac242d242d23be966085a2b2b893d989f824e06c9ad0395a8a52f055ba39abb2',
     y: '0000000000000000000000000000000000000000000000000000000000000000',
   };
-  
+
   it('should create a point', function() {
     var p = Point(valid.x, valid.y);
     should.exist(p);
   });
-  
+
   it('should create a point when called with "new"', function() {
     var p = new Point(valid.x,valid.y);
     should.exist(p);
   });
 
   describe('#getX', function() {
-    
+
     it('should return x', function() {
       var p = Point(valid.x,valid.y);
       var x = p.getX();
@@ -39,13 +39,13 @@ describe('Point', function() {
       var p = Point(valid.x,valid.y);
       var a = p.getX().toBuffer({size: 32});
       a.length.should.equal(32);
-      a.should.deep.equal(new Buffer(valid.x, 'hex'));
+      a.should.deep.equal( Buffer.from(valid.x, 'hex'));
     });
 
   });
 
   describe('#getY', function() {
-    
+
     it('should return y', function() {
       var p = Point(valid.x,valid.y);
       p.getY().toString('hex', 64).should.equal(valid.y);
@@ -55,7 +55,7 @@ describe('Point', function() {
       var p = Point(valid.x,valid.y);
       var a = p.getY().toBuffer({size: 32});
       a.length.should.equal(32);
-      a.should.deep.equal(new Buffer(valid.y, 'hex'));
+      a.should.deep.equal( Buffer.from(valid.y, 'hex'));
     });
 
   });
@@ -111,7 +111,7 @@ describe('Point', function() {
   });
 
   describe('@fromX', function() {
-    
+
     it('should return g', function() {
       var g = Point.getG();
       var p = Point.fromX(false, g.getX());

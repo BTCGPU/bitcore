@@ -1,9 +1,7 @@
 import _ from 'lodash';
+import logger from '../logger';
 
 const $ = require('preconditions').singleton();
-const log = require('npmlog');
-log.debug = log.verbose;
-log.disableColor();
 const Common = require('../common');
 const Constants = Common.Constants;
 const Defaults = Common.Defaults;
@@ -11,7 +9,7 @@ import { TxProposalAction } from './txproposalaction';
 
 function throwUnsupportedError() {
   const msg = 'Unsupported operation on this transaction proposal';
-  log.warn('DEPRECATED: ' + msg);
+  logger.warn('DEPRECATED: ' + msg);
   throw new Error(msg);
 }
 
@@ -131,8 +129,7 @@ export class TxProposalLegacy {
     x.proposalSignaturePubKey = obj.proposalSignaturePubKey;
     x.proposalSignaturePubKeySig = obj.proposalSignaturePubKeySig;
     x.addressType = obj.addressType || Constants.SCRIPT_TYPES.P2SH;
-    x.derivationStrategy =
-      obj.derivationStrategy || Constants.DERIVATION_STRATEGIES.BIP45;
+    x.derivationStrategy = obj.derivationStrategy || Constants.DERIVATION_STRATEGIES.BIP45;
     x.customData = obj.customData;
 
     return x;
@@ -163,10 +160,7 @@ export class TxProposalLegacy {
   }
 
   getTotalAmount() {
-    if (
-      this.type == TxProposalLegacy.Types.MULTIPLEOUTPUTS ||
-      this.type == TxProposalLegacy.Types.EXTERNAL
-    ) {
+    if (this.type == TxProposalLegacy.Types.MULTIPLEOUTPUTS || this.type == TxProposalLegacy.Types.EXTERNAL) {
       return _.map(this.outputs, 'amount').reduce(function(total, n) {
         return total + n;
       }, 0);
@@ -181,7 +175,7 @@ export class TxProposalLegacy {
 
   getApprovers() {
     return _.map(
-      _.filter(this.actions, (a) => {
+      _.filter(this.actions, a => {
         return a.type == 'accept';
       }),
       'copayerId'
@@ -233,7 +227,7 @@ export class TxProposalLegacy {
   }
 
   setBroadcasted() {
-    $.checkState(this.txid);
+    $.checkState(this.txid, 'Failed state: this.txid at setBroadcasted()');
     this.status = 'broadcasted';
     this.broadcastedOn = Math.floor(Date.now() / 1000);
   }

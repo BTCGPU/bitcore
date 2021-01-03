@@ -12,13 +12,9 @@
       </div>
     </ion-col>
     <ion-col col-5 text-right>
-      <ion-note [hidden]="!tx.firstSeenTs">
-        <span translate>first seen on</span>
-        <time>{{ tx.firstSeenTs * 1000 | date:'long' }}</time>
-      </ion-note>
-      <ion-note [hidden]="!tx.blocktime && tx.firstSeenTs">
+      <ion-note *ngIf="tx.time">
         <span translate>mined on</span>
-        <time>{{ tx.time * 1000 | date:'long' }}</time>
+        <time>{{ tx.time * 1000 | date:'medium' }}</time>
       </ion-note>
     </ion-col>
   </ion-row>
@@ -174,14 +170,22 @@
       <ion-chip color="danger" *ngIf="confirmations === -3">
         <ion-label>Invalid</ion-label>
       </ion-chip>
-      <ion-chip color="warning" *ngIf="confirmations === -1">
+      <ion-chip  color="warning" *ngIf="confirmations === -1">
         <ion-label>Unconfirmed</ion-label>
       </ion-chip>
-      <ion-chip color="primary" *ngIf="confirmations === 1">
+      <ion-chip  color="primary" *ngIf="confirmations === 1">
         <ion-label>1 Confirmation</ion-label>
       </ion-chip>
       <ion-chip color="primary" *ngIf="confirmations > 1">
         <ion-label>{{ confirmations }} Confirmations
+        </ion-label>
+      </ion-chip>
+      <ion-chip color="danger" *ngIf="tx.isRBF && confirmations === -1">
+        <ion-label>Replace By Fee (RBF) enabled
+        </ion-label>
+      </ion-chip>
+      <ion-chip color="danger" *ngIf="tx.hasUnconfirmedInputs">
+        <ion-label>Tx has unconfirmed inputs
         </ion-label>
       </ion-chip>
       <ion-chip color="default">

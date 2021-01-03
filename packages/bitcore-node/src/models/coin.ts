@@ -1,12 +1,12 @@
+import { CollectionAggregationOptions, ObjectID } from 'mongodb';
 import { LoggifyClass } from '../decorators/Loggify';
-import { BaseModel, MongoBound } from './base';
-import { ObjectID, CollectionAggregationOptions } from 'mongodb';
-import { SpentHeightIndicators, CoinJSON } from '../types/Coin';
-import { valueOrDefault } from '../utils/check';
 import { StorageService } from '../services/storage';
+import { CoinJSON, SpentHeightIndicators } from '../types/Coin';
+import { valueOrDefault } from '../utils/check';
+import { BaseModel, MongoBound } from './base';
 import { BitcoinBlockStorage } from './block';
 
-export type ICoin = {
+export interface ICoin {
   network: string;
   chain: string;
   mintTxid: string;
@@ -20,7 +20,8 @@ export type ICoin = {
   spentTxid: string;
   spentHeight: number;
   confirmations?: number;
-};
+  sequenceNumber?: number;
+}
 
 @LoggifyClass
 export class CoinModel extends BaseModel<ICoin> {
@@ -199,7 +200,8 @@ export class CoinModel extends BaseModel<ICoin> {
       address: valueOrDefault(coin.address, ''),
       script: valueOrDefault(coin.script, Buffer.alloc(0)).toString('hex'),
       value: valueOrDefault(coin.value, -1),
-      confirmations: valueOrDefault(coin.confirmations, -1)
+      confirmations: valueOrDefault(coin.confirmations, -1),
+      sequenceNumber: valueOrDefault(coin.sequenceNumber, undefined)
     };
     if (options && options.object) {
       return transform;

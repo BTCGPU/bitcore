@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
+import { merge, shareReplay } from 'rxjs/operators';
 import { ApiProvider, ChainNetwork } from '../../providers/api/api';
 import { CurrencyProvider } from '../../providers/currency/currency';
 
@@ -69,6 +70,10 @@ export interface AppEthBlock extends AppBlock {
 
 @Injectable()
 export class BlocksProvider {
+  public chainNetworkTipValues;
+  public currentChainNetwork;
+  public tipValue;
+
   constructor(
     public httpClient: HttpClient,
     public currency: CurrencyProvider,
@@ -122,6 +127,23 @@ export class BlocksProvider {
   public getCurrentHeight(
     chainNetwork: ChainNetwork
   ): Observable<ApiEthBlock & ApiUtxoCoinBlock> {
+    if (
+      !this.tipValue ||
+      !this.currentChainNetwork ||
+      this.currentChainNetwork !== chainNetwork
+    ) {
+      this.tipValue = this.requestCurrentHeight(chainNetwork).pipe(
+        merge(),
+        shareReplay(1)
+      );
+      this.currentChainNetwork = chainNetwork;
+    }
+    return this.tipValue;
+  }
+
+  public requestCurrentHeight(
+    chainNetwork: ChainNetwork
+  ): Observable<ApiEthBlock & ApiUtxoCoinBlock> {
     const heightUrl = `${this.api.getUrl(chainNetwork)}/block/tip`;
     return this.httpClient.get<ApiEthBlock & ApiUtxoCoinBlock>(heightUrl);
   }
@@ -134,6 +156,18 @@ export class BlocksProvider {
     return this.httpClient.get<ApiEthBlock[] & ApiUtxoCoinBlock[]>(url);
   }
 
+  public getCoinsForBlockHash(
+    blockHash: string,
+    chainNetwork: ChainNetwork,
+    limit: number,
+    page: number
+  ): Observable<any> {
+    const url = `${this.api.getUrl(
+      chainNetwork
+    )}/block/${blockHash}/coins/${limit}/${page}`;
+    return this.httpClient.get(url);
+  }
+
   /**
    * example: http://localhost:8100/api/BTC/regtest/block?since=582&limit=100&paging=height&direction=1
    */
@@ -142,7 +176,9 @@ export class BlocksProvider {
     numBlocks: number = 10,
     chainNetwork: ChainNetwork
   ): Observable<ApiEthBlock[] & ApiUtxoCoinBlock[]> {
-    const url = `${this.api.getUrl(chainNetwork)}/block?since=${since}&limit=${numBlocks}&paging=height&direction=-1`;
+    const url = `${this.api.getUrl(
+      chainNetwork
+    )}/block?since=${since}&limit=${numBlocks}&paging=height&direction=-1`;
     return this.httpClient.get<ApiEthBlock[] & ApiUtxoCoinBlock[]>(url);
   }
 

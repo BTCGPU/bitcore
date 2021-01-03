@@ -1,4 +1,6 @@
 import { Component, Input, OnInit } from '@angular/core';
+import { Nav, NavParams } from 'ionic-angular';
+import _ from 'lodash';
 import { ApiProvider, ChainNetwork } from '../../providers/api/api';
 import { BlocksProvider } from '../../providers/blocks/blocks';
 import { CurrencyProvider } from '../../providers/currency/currency';
@@ -25,25 +27,32 @@ export class TransactionDetailsComponent implements OnInit {
   @Input()
   public tx: any = {};
   @Input()
-  public showCoins = false;
+  public showCoins = true;
   @Input()
   public chainNetwork: ChainNetwork;
-  public confirmations: number;
+  public confirmations;
+  @Input()
+  public page: string;
 
   private COIN = 100000000;
+  private DEFAULT_RBF_SEQNUMBER = 0xffffffff;
 
   constructor(
     public currencyProvider: CurrencyProvider,
     public apiProvider: ApiProvider,
     public txProvider: TxsProvider,
     public redirProvider: RedirProvider,
-    public blocksProvider: BlocksProvider
-  ) {
-  }
+    public blocksProvider: BlocksProvider,
+    public nav: Nav,
+    public navParams: NavParams
+  ) {}
 
   public ngOnInit(): void {
+    this.getConfirmations();
     if (this.chainNetwork.chain !== 'ETH') {
-      this.showCoins ? this.getCoins() : this.getConfirmations();
+      if (!this.tx.vin || !this.tx.vin.length) {
+        this.getCoins();
+      }
     }
   }
 
@@ -54,13 +63,21 @@ export class TransactionDetailsComponent implements OnInit {
         this.tx.vin = data.inputs;
         this.tx.vout = data.outputs;
         this.tx.fee = this.txProvider.getFee(this.tx);
+        this.tx.isRBF = _.some(data.inputs, input => {
+          return (
+            input.sequenceNumber &&
+            input.sequenceNumber < this.DEFAULT_RBF_SEQNUMBER - 1
+          );
+        });
+        this.tx.hasUnconfirmedInputs = _.some(data.inputs, input => {
+          return input.mintHeight < 0;
+        });
         this.tx.valueOut = data.outputs.reduce((a, b) => a + b.value, 0);
-        this.getConfirmations();
       });
   }
 
   public getIsAddress(v: ApiCoin): boolean {
-    return v.address === 'true';
+    return v.address !== 'false';
   }
 
   public getAddress(v: ApiCoin, showUnparsed: boolean): string {
@@ -90,7 +107,8 @@ export class TransactionDetailsComponent implements OnInit {
       chain: this.chainNetwork.chain,
       network: this.chainNetwork.network,
       vout,
-      fromVout
+      fromVout,
+      prevPage: 'transaction-details'
     });
   }
 
