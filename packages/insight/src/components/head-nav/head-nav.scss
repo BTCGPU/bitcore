@@ -80,16 +80,18 @@ head-nav {
         margin-top: 4px;
         margin-left: -62px;
         padding: 9px 55px 9px 12px;
-        color: color($colors, dark-light);
-        background-color: #5969bd;
+        color: color($colors, light);
+        background-color: #5d61c3;
         border: 0;
         border-radius: 5px;
       }
       ::-webkit-input-placeholder {
         font-size: 15px;
+        color: color($colors, dark-light);
       }
       ::-moz-placeholder {
         font-size: 15px;
+        color: color($colors, dark-light);
       }
     }
   }
